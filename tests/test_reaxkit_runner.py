@@ -113,7 +113,7 @@ def test_runner_creates_profile_before_real_manager_starts(tmp_path, monkeypatch
         dat_set = Collection()
         job_col = Collection()
         par_eng = SimpleNamespace(active=SimpleNamespace(x=[0.4, 1.0, 0.984375]),
-                                  yaml_store=Collection().store)
+                                  yaml_store=Collection().store, write=Collection().store)
 
         def __call__(self, values):
             profile = json.loads((root / "manager/glompo-profile.json").read_text())
@@ -121,6 +121,9 @@ def test_runner_creates_profile_before_real_manager_starts(tmp_path, monkeypatch
             return sum(float(value) ** 2 for value in values)
 
         def convert_parms_real2scaled(self, values):
+            return values
+
+        def convert_parms_scaled2real(self, values):
             return values
 
         def set_parameters(self, values, space):

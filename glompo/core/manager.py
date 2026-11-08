@@ -1504,6 +1504,9 @@ class GloMPOManager:
                 self.f_counter += 1
 
                 self.opt_log.put_iteration(res)
+                callback = getattr(self, "iteration_callback", None)
+                if callback is not None:
+                    callback(res)
                 self.logger.debug("Result from %d fx = %e", res.opt_id, res.fx)
 
                 if self.visualisation:

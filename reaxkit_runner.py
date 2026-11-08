@@ -77,6 +77,7 @@ def convert_inputs(request, rows, expected_bounds, directory, objective_class):
 
 
 def main(argv=None):
+    from run_budget import Budget
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_config", nargs="?", type=Path)
     parser.add_argument("--check-only", action="store_true")
@@ -91,6 +92,7 @@ def main(argv=None):
     if not args.run_config:
         parser.error("run_config is required")
     request, rows, expected_bounds = load_request(args.run_config)
+    clock = None if args.check_only else Budget(request["native_directory"])
     affinity = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None
     resources = resource_plan(request["settings"]["job_workers"], os.environ, affinity, args.check_only)
     try:
@@ -140,7 +142,7 @@ def main(argv=None):
     manager = GloMPOManager.new_manager(
         task=task, bounds=task.bounds, opt_selector=selector, working_dir=directory,
         max_jobs=1, backend="threads", x0_generator=SinglePointGenerator(task.bounds, initial),
-        convergence_checker=MaxFuncCalls(settings["max_function_calls"]) | MaxSeconds(session_max=settings["max_seconds"]) | NOptConverged(1),
+        convergence_checker=MaxFuncCalls(settings["max_function_calls"]) | MaxSeconds(session_max=min(settings["max_seconds"], clock.seconds) if clock.seconds is not None else settings["max_seconds"]) | NOptConverged(1),
         summary_files=3, split_printstreams=False,
     )
     atomic_json(directory / "glompo-profile.json", dict(
@@ -149,6 +151,22 @@ def main(argv=None):
         optimizer_version=__version__, parameter_space="scaled_0_1", resources=resources,
         initial_candidate_policy="exact_first_evaluation",
         initial_parameters_scaled=list(map(float, initial))))
+    from copy import deepcopy
+    checkpoint_engine = deepcopy(task.par_eng)
+    best_score = [float("inf")]
+
+    def record_iteration(record):
+        clock.checkpoint(record.fx)
+        if math.isfinite(float(record.fx)) and float(record.fx) < best_score[0]:
+            checkpoint_engine.active.x = task.convert_parms_scaled2real(record.x)
+            temporary = directory / "ffield_best.tmp"
+            checkpoint_engine.write(str(temporary))
+            temporary.replace(directory / "ffield_best")
+            atomic_json(directory / "best_candidate_live.json", dict(score=float(record.fx), parameters_scaled=list(map(float, record.x))))
+            best_score[0] = float(record.fx)
+
+    manager.iteration_callback = record_iteration
+    clock.begin()
     result = manager.start_manager()
     export_native(directory)
     if not manager.converged or result.x is None or not math.isfinite(float(result.fx)):
@@ -160,6 +178,9 @@ def main(argv=None):
     atomic_json(best / "candidate.json", dict(score=float(result.fx), parameters_scaled=list(map(float, result.x)),
                                              origin=result.origin, restart="parameter_only"))
     print(f"Completed GloMPO: {result.fx}")
+    import re
+    timed_out = re.search(r"MaxSeconds\([^)]*\)\s*=\s*True", str(result.stats.get("end_cond", "")))
+    clock.finish("time_limit" if timed_out else "optimizer_criteria")
     return 0
 
 
