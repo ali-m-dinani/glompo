@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from reaxkit_runner import load_request
+from reaxkit_runner import load_request, convert_inputs
 from glompo.reaxkit_io import export_native
 
 
@@ -24,8 +24,42 @@ def request_file(tmp_path):
 def test_native_bounds_order(tmp_path):
     request = request_file(tmp_path)
     _, rows, bounds = load_request(request)
-    assert list(map(float, rows[0].split()[-2:])) == [2.6, 1.7]
+    assert list(map(float, rows[0].split()[-2:])) == [1.7, 2.6]
     assert bounds == [(1.7, 2.6)]
+
+
+def test_max_min_input_becomes_scm_min_max(tmp_path):
+    path = request_file(tmp_path)
+    data = json.loads(path.read_text())
+    data["params_bounds_order"] = "max_min"
+    path.write_text(json.dumps(data))
+    (tmp_path / "params").write_text("2 1 1 0.1 2.6 1.7\n")
+    _, rows, bounds = load_request(path)
+    assert list(map(float, rows[0].split()[-2:])) == [1.7, 2.6]
+    assert bounds == [(1.7, 2.6)]
+
+
+@pytest.mark.parametrize("converted_bounds", [[(1.7, 2.6)], [(1.0, 2.0)]])
+def test_runner_conversion_uses_copies_and_checks_bounds(tmp_path, converted_bounds):
+    from types import SimpleNamespace
+    request, rows, bounds = load_request(request_file(tmp_path))
+    original = (tmp_path / "params").read_bytes()
+
+    class Objective:
+        @staticmethod
+        def from_classic_files(directory, **kwargs):
+            assert kwargs == dict(strict_inputs=True, scm_conversion=True)
+            assert (directory / "params").read_text() == "".join(rows)
+            assert (directory / "ffield").read_text() == "fixture\n"
+            return SimpleNamespace(n_parms=1, par_eng=SimpleNamespace(
+                active=SimpleNamespace(range=converted_bounds)))
+
+    if converted_bounds == bounds:
+        assert convert_inputs(request, rows, bounds, tmp_path / "copy", Objective).n_parms == 1
+    else:
+        with pytest.raises(ValueError, match="count/bounds differ"):
+            convert_inputs(request, rows, bounds, tmp_path / "copy", Objective)
+    assert (tmp_path / "params").read_bytes() == original
 
 
 def test_seed_and_missing_control_rejected(tmp_path):

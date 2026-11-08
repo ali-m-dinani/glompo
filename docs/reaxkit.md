@@ -38,8 +38,9 @@ python reaxkit_runner.py --export-native /path/to/native/manager
 
 ## AMS/ParAMS profile
 
-`reaxkit_runner.py run-config.json --check-only` validates the contract, input
-files and ParAMS imports without running an engine. This profile uses upstream
+`reaxkit_runner.py run-config.json --check-only` validates the contract and performs
+strict classic-file conversion on temporary copies, including count/bounds and
+initial scaled-vector checks, without running an engine. This profile uses upstream
 `ReaxFFError.from_classic_files`, **not** AMS MCFF, OldReaxFF iopt optimization,
 JAX or LAMMPS. A compatible licensed SCM Python stack must be available.
 The upstream interface imports version-specific ParAMS internals; successful
@@ -76,3 +77,25 @@ The optional `GlompoParamsWrapper` requires a ParAMS optimizer API absent in
 this installation. Its absence no longer prevents importing the direct
 `ReaxFFError` interface used by the ReaxKit runner. Instantiating that optional
 wrapper still raises an explicit error; unrelated dependency failures propagate.
+
+### Verified cobalt conversion and boundary handling
+
+The user-run AMS 2023.103 converter produced 12 active parameters, 144 energy
+targets and 147 jobs. Inspection confirmed the requested parameter bounds,
+target expressions/references, and Weight/Sigma-squared equal to inverse
+accuracy-squared. Jobs comprise 130 geometry optimizations and 17 single points;
+this dataset is not an all-single-point smoke test.
+
+The ReaxKit runner opts into `scm_conversion=True`: explicit `use_weights=True`,
+the control-file path passed as `normal_run_settings`, and default ReaxParams
+construction. It stages six-column params in minimum/maximum order, matching
+the successfully converted input, regardless of the declared original order.
+It calls the installed SCM library; no SCM script is copied or redistributed.
+
+Strict mode accepts finite starting values on either bound without modifying
+them (including cobalt p_ovun2=-2.5 at its upper bound). Invalid/nonfinite ranges,
+out-of-bounds values and missing jobs still fail. Existing non-strict callers
+retain their previous midpoint behavior. No clipping or recentering is applied
+to the ReaxKit starting field. Actual runs preserve converted YAML files in
+`native/converted_to_params` for review. Conversion and engine compatibility
+of the updated runner must still be checked on Roar; local tests mock SCM APIs.

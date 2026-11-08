@@ -662,7 +662,9 @@ class ReaxFFError(BaseParamsError):
         path
             Path to classic ReaxFF files, passed to :func:`.setup_reax_from_classic`.
         """
-        dat_set, job_col, rxf_eng = setup_reax_from_classic(path, strict=kwargs.pop('strict_inputs', False))
+        dat_set, job_col, rxf_eng = setup_reax_from_classic(
+            path, strict=kwargs.pop('strict_inputs', False),
+            scm_conversion=kwargs.pop('scm_conversion', False))
         return cls(dat_set, job_col, rxf_eng, **kwargs)
 
     @classmethod
@@ -754,7 +756,8 @@ class XTBError(BaseParamsError):
         self.par_eng.write(str(path))
 
 
-def setup_reax_from_classic(path: Union[Path, str], strict: bool = False) -> Tuple[DataSet, JobCollection, ReaxParams]:
+def setup_reax_from_classic(path: Union[Path, str], strict: bool = False,
+                           scm_conversion: bool = False) -> Tuple[DataSet, JobCollection, ReaxParams]:
     """ Parses classic ReaxFF force field and configuration files into instances which can be evaluated by AMS.
 
     Parameters
@@ -763,7 +766,12 @@ def setup_reax_from_classic(path: Union[Path, str], strict: bool = False) -> Tup
         Path to directory containing classic ReaxFF configuration files:
     strict
         Reject out-of-bounds initial parameters and missing training jobs instead
-        of recentering parameters or dropping targets. Defaults to False.
+        of recentering parameters or dropping targets. Includes both bounds.
+        Defaults to False, preserving the legacy midpoint behavior.
+    scm_conversion
+        Use explicit training weights, the control-file path for NORMAL RUN,
+        and default parameter-interface construction as in SCM's converter.
+        Defaults to False for existing callers.
 
     Notes
     -----
@@ -811,16 +819,24 @@ def setup_reax_from_classic(path: Union[Path, str], strict: bool = False) -> Tup
     path = Path(path).resolve(True)
 
     # Setup the dataset
-    dat_set = trainset_to_params(str(path / 'trainset.in'))
+    if scm_conversion:
+        dat_set = trainset_to_params(str(path / 'trainset.in'), use_weights=True)
+    else:
+        dat_set = trainset_to_params(str(path / 'trainset.in'))
 
     # Setup the job collection depending on the types of data in the training set
-    settings = reaxff_control_to_settings(str(path / 'control'))
-    if dat_set.forces():
-        settings.input.ams.properties.gradients = True
-    job_col = geo_to_params(str(path / 'geo'), settings)
+    if scm_conversion:
+        if not (path / 'control').is_file():
+            raise ValueError("SCM conversion requires control; no default geometry settings are substituted")
+        job_col = geo_to_params(str(path / 'geo'), normal_run_settings=str(path / 'control'))
+    else:
+        settings = reaxff_control_to_settings(str(path / 'control'))
+        if dat_set.forces():
+            settings.input.ams.properties.gradients = True
+        job_col = geo_to_params(str(path / 'geo'), settings)
 
     # Setup the Engine and parameters
-    rxf_eng = ReaxParams(str(path / 'ffield'), bounds_scale=1.2)
+    rxf_eng = ReaxParams(str(path / 'ffield')) if scm_conversion else ReaxParams(str(path / 'ffield'), bounds_scale=1.2)
 
     # Look for optional extras files
     params_path = path / 'params'
@@ -849,12 +865,15 @@ def setup_reax_from_classic(path: Union[Path, str], strict: bool = False) -> Tup
     # Consistency Checks
 
     # Parameter value between bounds
-    for p in rxf_eng.active:
-        if not p.range[0] < p.value < p.range[1]:
-            if strict:
-                raise ValueError(f"'{p.name}' starting value is not strictly inside its bounds")
-            p.value = (p.range[0] + p.range[1]) / 2
-            warnings.warn(f"'{p.name}' starting value out of bounds moving to midpoint.")
+    for parameter in rxf_eng.active:
+        if strict:
+            lower, upper = parameter.range
+            if (not all(np.isfinite(value) for value in (lower, upper, parameter.value))
+                    or not lower < upper or not lower <= parameter.value <= upper):
+                raise ValueError(f"'{parameter.name}' starting value or bounds invalid/out of bounds")
+        elif not parameter.range[0] < parameter.value < parameter.range[1]:
+            parameter.value = (parameter.range[0] + parameter.range[1]) / 2
+            warnings.warn(f"'{parameter.name}' starting value out of bounds moving to midpoint.")
 
     # Remove training set entries not in job collection
     remove_ids = dat_set.check_consistency(job_col)

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import tempfile
 
 
 def finite(value):
@@ -53,10 +54,23 @@ def load_request(path):
         if lower >= upper:
             raise ValueError("Parameter bounds must be strictly increasing")
         bounds.append((lower, upper))
-        rows.append(" ".join(map(str, location)) + f" {step:.17g} {upper:.17g} {lower:.17g}\n")
+        rows.append(" ".join(map(str, location)) + f" {step:.17g} {lower:.17g} {upper:.17g}\n")
     if not rows:
         raise ValueError("No active parameters")
     return request, rows, bounds
+
+
+def convert_inputs(request, rows, expected_bounds, directory, objective_class):
+    directory = Path(directory)
+    directory.mkdir()
+    for key, name in {"ffield": "ffield", "geo": "geo", "trainset": "trainset.in", "control": "control"}.items():
+        shutil.copyfile(request["inputs"][key], directory / name)
+    (directory / "params").write_text("".join(rows))
+    task = objective_class.from_classic_files(directory, strict_inputs=True, scm_conversion=True)
+    actual_bounds = [tuple(map(float, pair)) for pair in task.par_eng.active.range]
+    if task.n_parms != len(rows) or sorted(actual_bounds) != sorted(expected_bounds):
+        raise ValueError("ParAMS active parameter count/bounds differ from requested params; aborting")
+    return task
 
 
 def main(argv=None):
@@ -79,7 +93,11 @@ def main(argv=None):
     except (ImportError, AttributeError) as error:
         raise RuntimeError("A compatible licensed AMS/ParAMS Python installation is required; load AMS and verify glompo.interfaces.params imports before submission") from error
     if args.check_only:
-        print(f"Input and ParAMS import checks passed for {len(rows)} parameters; conversion/engine execution remains unverified")
+        with tempfile.TemporaryDirectory(prefix="glompo-conversion-") as temporary:
+            task = convert_inputs(request, rows, expected_bounds, Path(temporary) / "inputs", ReaxFFError)
+            initial = list(map(float, task.convert_parms_real2scaled(task.par_eng.active.x)))
+            print(f"Classic conversion passed for {task.n_parms} parameters; scaled initial values: {initial}")
+        print("Engine execution remains unverified; no evaluations performed")
         return 0
     from glompo import __version__
     from glompo.convergence import MaxFuncCalls, MaxSeconds, NOptConverged
@@ -96,14 +114,12 @@ def main(argv=None):
     inputs = root / "ams-inputs"
     if inputs.exists() or (root / "manager").exists():
         raise ValueError("Run already prepared/started; use a fresh campaign")
-    inputs.mkdir()
-    for key, name in {"ffield": "ffield", "geo": "geo", "trainset": "trainset.in", "control": "control"}.items():
-        shutil.copyfile(request["inputs"][key], inputs / name)
-    (inputs / "params").write_text("".join(rows))
-    task = ReaxFFError.from_classic_files(inputs, strict_inputs=True)
-    actual_bounds = [tuple(map(float, pair)) for pair in task.par_eng.active.range]
-    if task.n_parms != len(rows) or sorted(actual_bounds) != sorted(expected_bounds):
-        raise ValueError("ParAMS active parameter count/bounds differ from requested params; aborting")
+    task = convert_inputs(request, rows, expected_bounds, inputs, ReaxFFError)
+    converted = root / "converted_to_params"
+    converted.mkdir()
+    task.dat_set.store(str(converted / "training_set.yaml"))
+    task.job_col.store(str(converted / "job_collection.yaml"))
+    task.par_eng.yaml_store(str(converted / "parameter_interface.yaml"))
     settings = request["settings"]
     initial = task.convert_parms_real2scaled(task.par_eng.active.x)
     selector = CycleSelector((CMAOptimizer,
