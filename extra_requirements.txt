@@ -18,7 +18,7 @@ video                   Produce a MPEG-4 file of the optimization.
 
 .. tab-end
 PySide2~=5.15.2:         video
-cma~=2.7:                cma
+cma>=3.3,<4:             cma
 dill~=0.3:               checkpointing
 matplotlib~=3.3.2:       plotting, video
 nevergrad~=0.3.2:        nevergrad

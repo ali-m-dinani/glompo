@@ -45,7 +45,7 @@ setup(
     license_file='LICENSE',
     include_package_data=True,
     package_dir={"glompo": "glompo"},
-    install_requires=['numpy~=1.17.4', 'PyYAML~=5.1.2', 'tables~=3.6.1'],
-    python_requires='>=3.6',
+    install_requires=['numpy>=1.26,<2', 'PyYAML>=6,<7', 'tables>=3.9,<4'],
+    python_requires='>=3.9',
     extras_require=get_extra_requires('extra_requirements.txt'),
 )

@@ -652,7 +652,7 @@ class ReaxFFError(BaseParamsError):
         path
             Path to classic ReaxFF files, passed to :func:`.setup_reax_from_classic`.
         """
-        dat_set, job_col, rxf_eng = setup_reax_from_classic(path)
+        dat_set, job_col, rxf_eng = setup_reax_from_classic(path, strict=kwargs.pop('strict_inputs', False))
         return cls(dat_set, job_col, rxf_eng, **kwargs)
 
     @classmethod
@@ -744,13 +744,16 @@ class XTBError(BaseParamsError):
         self.par_eng.write(str(path))
 
 
-def setup_reax_from_classic(path: Union[Path, str]) -> Tuple[DataSet, JobCollection, ReaxParams]:
+def setup_reax_from_classic(path: Union[Path, str], strict: bool = False) -> Tuple[DataSet, JobCollection, ReaxParams]:
     """ Parses classic ReaxFF force field and configuration files into instances which can be evaluated by AMS.
 
     Parameters
     ----------
     path
         Path to directory containing classic ReaxFF configuration files:
+    strict
+        Reject out-of-bounds initial parameters and missing training jobs instead
+        of recentering parameters or dropping targets. Defaults to False.
 
     Notes
     -----
@@ -838,12 +841,16 @@ def setup_reax_from_classic(path: Union[Path, str]) -> Tuple[DataSet, JobCollect
     # Parameter value between bounds
     for p in rxf_eng.active:
         if not p.range[0] < p.value < p.range[1]:
+            if strict:
+                raise ValueError(f"'{p.name}' starting value is not strictly inside its bounds")
             p.value = (p.range[0] + p.range[1]) / 2
             warnings.warn(f"'{p.name}' starting value out of bounds moving to midpoint.")
 
     # Remove training set entries not in job collection
     remove_ids = dat_set.check_consistency(job_col)
     if remove_ids:
+        if strict:
+            raise ValueError(f"Training entries reference unavailable jobs: {remove_ids}")
         print('The following jobIDs are not in the JobCollection, their respective training set entries will be '
               'removed:')
         print('\n'.join({s for e in [dat_set[i] for i in remove_ids] for s in e.jobids}))

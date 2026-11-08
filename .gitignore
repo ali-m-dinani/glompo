@@ -3,6 +3,8 @@
 *egg-info
 saved_test_outputs
 .idea/
+.venv/
+local_runs/
 __pycache__
 docs/_build
 .pylintrc
