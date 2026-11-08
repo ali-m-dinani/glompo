@@ -144,7 +144,7 @@ ReaxFF. Prepare a fresh campaign after it passes; retain earlier runs unchanged.
 # Geometry-level resource contract
 
 The ReaxKit runner accepts `job_workers` (positive integer, default 1), passed to
-ParAMS `ParallelLevels(jobs=job_workers, processes=1, threads=1)`. One optimizer
+ParAMS `ParallelLevels(optimizations=1, parametervectors=1, jobs=job_workers, processes=1, threads=1)`. One optimizer
 and one CMA candidate worker remain active. Geometry jobs within a candidate can
 run concurrently; candidate evaluations do not share mutable objective state.
 

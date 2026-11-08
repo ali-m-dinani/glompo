@@ -25,7 +25,8 @@ def resource_plan(job_workers, environment, affinity=None, check_only=False):
 
 def configure_task(task, workers):
     from glompo.interfaces.params import ParallelLevels
-    task.par_levels = ParallelLevels(jobs=workers, processes=1, threads=1)
+    task.par_levels = ParallelLevels(optimizations=1, parametervectors=1,
+                                    jobs=workers, processes=1, threads=1)
 
 
 def engine_environment():

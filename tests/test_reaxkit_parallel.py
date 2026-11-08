@@ -31,13 +31,15 @@ def test_allocation_and_affinity():
             resource_plan(4, dict(environment, **{name: "2"}), 8)
 
 
-def test_native_parallel_levels(monkeypatch):
+@pytest.mark.parametrize("workers", [1, 4])
+def test_native_parallel_levels(monkeypatch, workers):
     module = ModuleType("glompo.interfaces.params")
     module.ParallelLevels = lambda **kwargs: kwargs
     monkeypatch.setitem(sys.modules, "glompo.interfaces.params", module)
     task = SimpleNamespace()
-    configure_task(task, 4)
-    assert task.par_levels == dict(jobs=4, processes=1, threads=1)
+    configure_task(task, workers)
+    assert task.par_levels == dict(optimizations=1, parametervectors=1,
+                                   jobs=workers, processes=1, threads=1)
 
 
 def test_engine_environment(monkeypatch):
