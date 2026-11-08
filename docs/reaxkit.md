@@ -99,3 +99,13 @@ retain their previous midpoint behavior. No clipping or recentering is applied
 to the ReaxKit starting field. Actual runs preserve converted YAML files in
 `native/converted_to_params` for review. Conversion and engine compatibility
 of the updated runner must still be checked on Roar; local tests mock SCM APIs.
+
+### Manager directory initialization
+
+Roar job 57122434 completed input conversion but failed before optimization:
+the runner wrote profile metadata before the manager created its directory.
+The runner now creates that directory explicitly before manager setup and
+profile output. A regression test exercises the real manager/CMA/export path
+with a synthetic objective and verifies that repeated runs cannot overwrite
+existing results. This test does not validate AMS engine execution.
+Retain failed campaigns and prepare a new output directory for the retry.

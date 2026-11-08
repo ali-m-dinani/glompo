@@ -89,3 +89,62 @@ def test_hdf5_export(tmp_path):
     assert records[1]["score"] is None
     assert records[1]["raw_score"] == "nan"
     assert records[0]["parameters"] == [0.5, 0.2]
+
+
+def test_runner_creates_profile_before_real_manager_starts(tmp_path, monkeypatch):
+    import sys
+    from types import ModuleType, SimpleNamespace
+    import reaxkit_runner
+
+    path = request_file(tmp_path)
+    request = json.loads(path.read_text())
+    root = tmp_path / "native"
+    request["native_directory"] = str(root)
+    path.write_text(json.dumps(request))
+    monkeypatch.setenv("SLURM_NTASKS", "1")
+
+    class Collection:
+        def store(self, destination):
+            from pathlib import Path
+            Path(destination).write_text("synthetic fixture\n")
+
+    class Objective:
+        bounds = [(0.0, 1.0)] * 3
+        dat_set = Collection()
+        job_col = Collection()
+        par_eng = SimpleNamespace(active=SimpleNamespace(x=[0.4, 0.5, 0.6]),
+                                  yaml_store=Collection().store)
+
+        def __call__(self, values):
+            profile = json.loads((root / "manager/glompo-profile.json").read_text())
+            assert profile["profile"] == "ams_params"
+            return sum(float(value) ** 2 for value in values)
+
+        def convert_parms_real2scaled(self, values):
+            return values
+
+        def set_parameters(self, values, space):
+            assert space == "scaled"
+
+        def save(self, directory):
+            (directory / "ffield").write_text("synthetic best-field fixture\n")
+
+    def convert(request, rows, bounds, directory, objective_class):
+        directory.mkdir()
+        return Objective()
+
+    fake_params = ModuleType("glompo.interfaces.params")
+    fake_params.ReaxFFError = Objective
+    monkeypatch.setitem(sys.modules, "glompo.interfaces.params", fake_params)
+    monkeypatch.setattr(reaxkit_runner, "convert_inputs", convert)
+    assert not root.exists()
+    assert reaxkit_runner.main([str(path)]) == 0
+    directory = root / "manager"
+    assert (directory / "glompo_log.h5").is_file()
+    metadata = json.loads((directory / "glompo_history.meta.json").read_text())
+    assert metadata["count"] > 0
+    assert (directory / "best/ffield").is_file()
+    profile = (directory / "glompo-profile.json").read_bytes()
+    with pytest.raises(ValueError, match="already prepared/started"):
+        reaxkit_runner.main([str(path)])
+    assert (directory / "glompo-profile.json").read_bytes() == profile

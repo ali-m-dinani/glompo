@@ -127,6 +127,7 @@ def main(argv=None):
                                    maxiter=settings["max_iterations"], verbose=False),
                               dict(sigma0=settings["sigma0"])))
     directory = root / "manager"
+    directory.mkdir()
     manager = GloMPOManager.new_manager(
         task=task, bounds=task.bounds, opt_selector=selector, working_dir=directory,
         max_jobs=1, backend="threads", x0_generator=SinglePointGenerator(task.bounds, initial),
