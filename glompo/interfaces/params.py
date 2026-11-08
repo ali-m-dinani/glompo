@@ -10,7 +10,6 @@ from scm.params.common.reaxff_converter import geo_to_params, trainset_to_params
 from scm.params.core.dataset import DataSet, SSE
 from scm.params.core.jobcollection import JobCollection
 from scm.params.core.opt_components import _Step
-from scm.params.optimizers.base import BaseOptimizer, MinimizeResult
 from scm.params.parameterinterfaces.base import BaseParameters
 from scm.params.parameterinterfaces.reaxff import ReaxParams  # Instead of ReaxFFParameters for backward compatibility
 from scm.params.parameterinterfaces.xtb import XTBParams
@@ -19,6 +18,14 @@ from scm.plams.interfaces.adfsuite.reaxff import reaxff_control_to_settings
 
 from ..core.manager import GloMPOManager
 from ..opt_selectors.baseselector import BaseSelector
+
+try:
+    from scm.params.optimizers.base import BaseOptimizer, MinimizeResult
+except ModuleNotFoundError as error:
+    if error.name not in ('scm.params.optimizers', 'scm.params.optimizers.base'):
+        raise
+    BaseOptimizer = object
+    MinimizeResult = None
 
 try:
     from scm.params.core.dataset import DataSetEvaluationError
@@ -76,6 +83,9 @@ class GlompoParamsWrapper(BaseOptimizer):
     """
 
     def __init__(self, opt_selector: BaseSelector, **manager_kwargs):
+        if MinimizeResult is None:
+            raise ImportError("GlompoParamsWrapper requires scm.params.optimizers.base; "
+                              "use the direct ReaxFFError interface on this ParAMS installation")
         self.manager = GloMPOManager()
         self.manager_kwargs = manager_kwargs
         for kw in ['task', 'bounds']:

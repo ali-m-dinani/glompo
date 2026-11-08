@@ -63,3 +63,16 @@ Successful runs write `native/manager/` history and `best/ffield` with
 an exact manager restart. Labeled parity data are not exported. Scientific
 equivalence to the original trainset and other optimizers needs manual review.
 No AMS/ParAMS calculation has yet been validated for this integration.
+
+### AMS 2023.103 import compatibility
+
+Roar's bundled Python 3.8 successfully imported the GloMPO manager, CMA wrapper
+and history exporter with its existing NumPy 1.21.2, PyYAML 5.4.1, PyTables 3.7.0,
+CMA 3.2.2 and Matplotlib 3.5.1. This is import evidence only, not an engine test.
+Run from the checkout with `amspython`; do not install the modern pinned
+requirements into AMS's shared environment.
+
+The optional `GlompoParamsWrapper` requires a ParAMS optimizer API absent in
+this installation. Its absence no longer prevents importing the direct
+`ReaxFFError` interface used by the ReaxKit runner. Instantiating that optional
+wrapper still raises an explicit error; unrelated dependency failures propagate.
