@@ -9,6 +9,8 @@ import re
 import shutil
 import tempfile
 
+from reaxkit_parallel import configure_task, engine_environment, resource_plan
+
 
 def finite(value):
     result = float(str(value).replace("D", "E").replace("d", "e"))
@@ -24,10 +26,11 @@ def load_request(path):
     if request.get("seed") is not None:
         raise ValueError("Use seed: null; multi-optimizer RNG forwarding is not verified")
     settings = request["settings"]
-    allowed = {"max_function_calls", "max_seconds", "population_size", "max_iterations", "sigma0"}
+    settings.setdefault("job_workers", 1)
+    allowed = {"max_function_calls", "max_seconds", "population_size", "max_iterations", "sigma0", "job_workers"}
     if set(settings) - allowed:
         raise ValueError("Unsupported GloMPO runner settings")
-    for key in ("max_function_calls", "population_size", "max_iterations"):
+    for key in ("max_function_calls", "population_size", "max_iterations", "job_workers"):
         if type(settings.get(key)) is not int or settings[key] < (2 if key == "population_size" else 1):
             raise ValueError(f"Invalid {key}")
     if finite(settings["max_seconds"]) <= 0 or not 0 < finite(settings["sigma0"]) <= 1:
@@ -88,6 +91,8 @@ def main(argv=None):
     if not args.run_config:
         parser.error("run_config is required")
     request, rows, expected_bounds = load_request(args.run_config)
+    affinity = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None
+    resources = resource_plan(request["settings"]["job_workers"], os.environ, affinity, args.check_only)
     try:
         from glompo.interfaces.params import ReaxFFError
     except (ImportError, AttributeError) as error:
@@ -95,9 +100,13 @@ def main(argv=None):
     if args.check_only:
         with tempfile.TemporaryDirectory(prefix="glompo-conversion-") as temporary:
             task = convert_inputs(request, rows, expected_bounds, Path(temporary) / "inputs", ReaxFFError)
+            configure_task(task, resources["job_workers"])
             initial = list(map(float, task.convert_parms_real2scaled(task.par_eng.active.x)))
             print(f"Classic conversion passed for {task.n_parms} parameters; scaled initial values: {initial}")
         print("Engine execution remains unverified; no evaluations performed")
+        print("Resources: " + json.dumps(resources))
+        if not resources["allocation_checked"]:
+            print("Slurm allocation validation deferred until execution")
         return 0
     from glompo import __version__
     from glompo.convergence import MaxFuncCalls, MaxSeconds, NOptConverged
@@ -107,14 +116,14 @@ def main(argv=None):
     from glompo.optimizers.cmawrapper import CMAOptimizer
     from glompo.reaxkit_io import atomic_json, export_native
 
-    if int(os.environ.get("SLURM_NTASKS", "1")) != 1:
-        raise ValueError("This initial serial profile requires one Slurm task")
+    engine_environment()
     root = Path(request["native_directory"]).resolve()
     root.mkdir(parents=True, exist_ok=True)
     inputs = root / "ams-inputs"
     if inputs.exists() or (root / "manager").exists():
         raise ValueError("Run already prepared/started; use a fresh campaign")
     task = convert_inputs(request, rows, expected_bounds, inputs, ReaxFFError)
+    configure_task(task, resources["job_workers"])
     converted = root / "converted_to_params"
     converted.mkdir()
     task.dat_set.store(str(converted / "training_set.yaml"))
@@ -137,7 +146,7 @@ def main(argv=None):
     atomic_json(directory / "glompo-profile.json", dict(
         profile="ams_params", engine="SCM AMS/ParAMS ReaxFF", objective="ParAMS SSE (native dataset sigma/weights)",
         dataset_scope="ParAMS-converted trainset; scientific equivalence unverified",
-        optimizer_version=__version__, parameter_space="scaled_0_1",
+        optimizer_version=__version__, parameter_space="scaled_0_1", resources=resources,
         initial_candidate_policy="exact_first_evaluation",
         initial_parameters_scaled=list(map(float, initial))))
     result = manager.start_manager()

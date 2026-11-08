@@ -141,3 +141,21 @@ Before the new engine smoke, run from the checkout under AMS 2023.103:
 
 This small analytic check verifies the installed CMA version without evaluating
 ReaxFF. Prepare a fresh campaign after it passes; retain earlier runs unchanged.
+# Geometry-level resource contract
+
+The ReaxKit runner accepts `job_workers` (positive integer, default 1), passed to
+ParAMS `ParallelLevels(jobs=job_workers, processes=1, threads=1)`. One optimizer
+and one CMA candidate worker remain active. Geometry jobs within a candidate can
+run concurrently; candidate evaluations do not share mutable objective state.
+
+For job_workers greater than one, execute inside Slurm with one node, one task
+and at least job_workers CPUs per task. CPU affinity must also permit that many
+workers. The runner fixes child engine and BLAS thread counts to one, and records
+the resource plan in glompo-profile.json. Check-only exercises the constructor
+without engine calls and explicitly defers allocation validation on login nodes.
+The installed AMS release must support the requested constructor keywords.
+
+Serial AMS 2023.103 job 57122639 evaluated the exact initial vector, with 11
+evaluations and best SSE 1451.4515029431068 (the initial candidate). It stopped
+at the manager time limit. Parallel execution still needs a separate Roar test;
+neither speedup nor cross-engine objective equivalence is claimed.

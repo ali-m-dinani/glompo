@@ -135,6 +135,8 @@ def test_runner_creates_profile_before_real_manager_starts(tmp_path, monkeypatch
 
     fake_params = ModuleType("glompo.interfaces.params")
     fake_params.ReaxFFError = Objective
+    fake_params.ParallelLevels = lambda **kwargs: SimpleNamespace(**kwargs)
+    monkeypatch.setattr(reaxkit_runner, "engine_environment", lambda: None)
     monkeypatch.setitem(sys.modules, "glompo.interfaces.params", fake_params)
     monkeypatch.setattr(reaxkit_runner, "convert_inputs", convert)
     assert not root.exists()
