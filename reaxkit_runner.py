@@ -125,7 +125,7 @@ def main(argv=None):
     selector = CycleSelector((CMAOptimizer,
                               dict(workers=1, popsize=settings["population_size"],
                                    maxiter=settings["max_iterations"], verbose=False),
-                              dict(sigma0=settings["sigma0"])))
+                              dict(sigma0=settings["sigma0"], preserve_initial=True)))
     directory = root / "manager"
     directory.mkdir()
     manager = GloMPOManager.new_manager(
@@ -137,7 +137,9 @@ def main(argv=None):
     atomic_json(directory / "glompo-profile.json", dict(
         profile="ams_params", engine="SCM AMS/ParAMS ReaxFF", objective="ParAMS SSE (native dataset sigma/weights)",
         dataset_scope="ParAMS-converted trainset; scientific equivalence unverified",
-        optimizer_version=__version__, parameter_space="scaled_0_1"))
+        optimizer_version=__version__, parameter_space="scaled_0_1",
+        initial_candidate_policy="exact_first_evaluation",
+        initial_parameters_scaled=list(map(float, initial))))
     result = manager.start_manager()
     export_native(directory)
     if not manager.converged or result.x is None or not math.isfinite(float(result.fx)):

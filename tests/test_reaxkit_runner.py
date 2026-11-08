@@ -112,7 +112,7 @@ def test_runner_creates_profile_before_real_manager_starts(tmp_path, monkeypatch
         bounds = [(0.0, 1.0)] * 3
         dat_set = Collection()
         job_col = Collection()
-        par_eng = SimpleNamespace(active=SimpleNamespace(x=[0.4, 0.5, 0.6]),
+        par_eng = SimpleNamespace(active=SimpleNamespace(x=[0.4, 1.0, 0.984375]),
                                   yaml_store=Collection().store)
 
         def __call__(self, values):
@@ -143,6 +143,12 @@ def test_runner_creates_profile_before_real_manager_starts(tmp_path, monkeypatch
     assert (directory / "glompo_log.h5").is_file()
     metadata = json.loads((directory / "glompo_history.meta.json").read_text())
     assert metadata["count"] > 0
+    first = json.loads((directory / "glompo_history.jsonl").read_text().splitlines()[0])
+    assert first["parameters"] == [0.4, 1.0, 0.984375]
+    assert first["score"] == sum(value ** 2 for value in first["parameters"])
+    saved_profile = json.loads((directory / "glompo-profile.json").read_text())
+    assert saved_profile["initial_candidate_policy"] == "exact_first_evaluation"
+    assert saved_profile["initial_parameters_scaled"] == first["parameters"]
     assert (directory / "best/ffield").is_file()
     profile = (directory / "glompo-profile.json").read_bytes()
     with pytest.raises(ValueError, match="already prepared/started"):

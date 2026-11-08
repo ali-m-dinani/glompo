@@ -409,8 +409,11 @@ class BaseParamsError:
         elif space != 'real':
             raise ValueError(f"Cannot parse space='{space}', 'real' or 'scaled' expected.")
 
-        if any([not (min_ < x_ < max_) for x_, (min_, max_) in
-                zip(x, self.par_eng.range if not full else self.par_eng.active.range)]):
+        ranges = self.par_eng.range if full else self.par_eng.active.range
+        if len(x) != len(ranges):
+            raise ValueError("Parameter vector length does not match the selected parameter ranges")
+        if any(not np.isfinite(value) or not lower <= value <= upper
+               for value, (lower, upper) in zip(x, ranges)):
             warnings.warn("x contains parameters which are outside their bounds.", UserWarning)
 
         if full:

@@ -109,7 +109,7 @@ class CMAOptimizer(BaseOptimizer):
                  x0: Sequence[float],
                  bounds: Sequence[Tuple[float, float]],
                  callbacks: Callable[[], Optional[Any]] = None,
-                 sigma0: float = 0, **kwargs) -> MinimizeResult:
+                 sigma0: float = 0, preserve_initial: bool = False, **kwargs) -> MinimizeResult:
         """ Begin CMA-ES minimization loop.
 
         Parameters
@@ -117,12 +117,16 @@ class CMAOptimizer(BaseOptimizer):
         Inherited, function bounds callbacks
             See :meth:`.BaseOptimizer.minimize`
         x0
-            Initial mean of the multivariate normal distribution from which trials are drawn. Force injected into the
-            solver to guarantee it is evaluated.
+            Initial mean of the multivariate normal distribution from which trials are drawn.
+            Force injected into the solver; CMA's boundary transform may modify it.
         sigma0
             Initial standard deviation of the multivariate normal distribution from which trials are drawn. One value
             for all parameters which means that all parameters must be scaled accordingly. Default is zero which will
             not accepted by the optimizer, thus this argument must be provided.
+        preserve_initial
+            On a fresh run, evaluate exactly x0 as the first member of the first
+            population, bypassing injection boundary transforms for that candidate.
+            It counts within the normal population/evaluation budget. Defaults to False.
 
         Returns
         -------
@@ -135,6 +139,14 @@ class CMAOptimizer(BaseOptimizer):
             If `sigma0` is not changed from the default value of zero.
         """
         task_settings = copy.deepcopy(self.cmasettings)
+        initial_vector = np.array(x0, dtype=float, copy=True)
+        if preserve_initial and not self.is_restart:
+            limits = np.asarray(bounds, dtype=float)
+            if (initial_vector.ndim != 1 or limits.shape != (len(initial_vector), 2)
+                    or not np.all(np.isfinite(initial_vector))
+                    or not np.all(initial_vector >= limits[:, 0])
+                    or not np.all(initial_vector <= limits[:, 1])):
+                raise ValueError("Exact initial candidate must be finite and within its bounds")
 
         if sigma0 <= 0:
             self.logger.critical('sigma0 value invalid. Please select a positive value.')
@@ -159,7 +171,8 @@ class CMAOptimizer(BaseOptimizer):
             self.result = MinimizeResult()
             task_settings.update({'bounds': np.transpose(bounds).tolist()})
             self.es = cma.CMAEvolutionStrategy(x0, sigma0, task_settings)
-            self.es.inject([x0], force=True)
+            if not preserve_initial:
+                self.es.inject([x0], force=True)
 
         self.logger.debug("Entering optimization loop")
 
@@ -169,6 +182,8 @@ class CMAOptimizer(BaseOptimizer):
             i += 1
             self.logger.debug("Asking for parameter vectors")
             x = self.es.ask()
+            if preserve_initial and not self.is_restart and i == 1:
+                x[0] = initial_vector.copy()
             self.logger.debug("Parameter vectors generated")
 
             fx = self._parallel_map(function, x)
@@ -178,7 +193,7 @@ class CMAOptimizer(BaseOptimizer):
                 break
 
             if i == 1:
-                self.incumbent = {'x': x0, 'fx': fx[0]}
+                self.incumbent = {'x': np.array(x[0], copy=True), 'fx': fx[0]}
 
             self.es.tell(x, fx)
             self.logger.debug("Told solutions")

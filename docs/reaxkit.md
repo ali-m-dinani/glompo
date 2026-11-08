@@ -109,3 +109,35 @@ profile output. A regression test exercises the real manager/CMA/export path
 with a synthetic objective and verifies that repeated runs cannot overwrite
 existing results. This test does not validate AMS engine execution.
 Retain failed campaigns and prepare a new output directory for the retry.
+
+### Exact initial candidate and active bounds
+
+Roar job 57122446 finished with nine evaluations before the 300-second manager
+limit. Its first evaluated vector differed from the requested starting vector
+because CMA transformed the injected point near the bounds; its score is not
+the original-field baseline. Existing outputs must not be relabeled as such.
+
+The ReaxKit runner now enables `preserve_initial=True` in the CMA wrapper. On a
+fresh run, the first population member is an exact copy of the requested scaled
+vector, evaluated and passed to CMA's tell step with its own score. This replaces
+one population member rather than adding an uncounted baseline evaluation.
+The option is off for other callers and is not applied to restarted optimizers.
+Incumbent bookkeeping now always pairs a score with the vector actually evaluated.
+
+Profile metadata records the exact-start policy and requested scaled vector.
+ReaxKit verifies that vector against call 1 before identifying an initial-parameter
+evaluation. Scaled/physical round-trip precision and scientific comparability
+still require review; a manager time limit is not optimizer convergence.
+
+`BaseParamsError.set_parameters` now uses active ranges for active vectors and
+full ranges for full vectors, includes endpoints, rejects length mismatches,
+and retains warnings for genuinely invalid/nonfinite values without clipping.
+
+Before the new engine smoke, run from the checkout under AMS 2023.103:
+
+```bash
+"$AMSBIN/amspython" examples/reaxkit_initial_check.py
+```
+
+This small analytic check verifies the installed CMA version without evaluating
+ReaxFF. Prepare a fresh campaign after it passes; retain earlier runs unchanged.
