@@ -68,6 +68,15 @@ def convert_inputs(request, rows, expected_bounds, directory, objective_class):
     directory.mkdir()
     for key, name in {"ffield": "ffield", "geo": "geo", "trainset": "trainset.in", "control": "control"}.items():
         shutil.copyfile(request["inputs"][key], directory / name)
+    geometry = directory / "geo"
+    records = []
+    between_structures = True
+    for record in geometry.read_text().splitlines(keepends=True):
+        if between_structures and not record.strip():
+            continue
+        records.append(record)
+        between_structures = record.strip() == "END"
+    geometry.write_text("".join(records))
     (directory / "params").write_text("".join(rows))
     task = objective_class.from_classic_files(directory, strict_inputs=True, scm_conversion=True)
     actual_bounds = [tuple(map(float, pair)) for pair in task.par_eng.active.range]
