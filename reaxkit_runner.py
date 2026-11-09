@@ -74,6 +74,8 @@ def convert_inputs(request, rows, expected_bounds, directory, objective_class):
     for record in geometry.read_text().splitlines(keepends=True):
         if between_structures and not record.strip():
             continue
+        if between_structures and records:
+            records.append("\n")
         records.append(record)
         between_structures = record.strip() == "END"
     geometry.write_text("".join(records))
